@@ -14,11 +14,14 @@ public class ModeAutomaton {
         if mode == .editor || mode == .textInput {
             return false
         }
+
         if mode == .off {
             mode.set(.cameraRotate)
+            return true
 
         } else if mode == .arbitraryClick && ActionDispatcher.cursorHideNecessary {
             mode.set(.cameraRotate)
+            return true
 
         } else if mode == .cameraRotate {
             if PlaySettings.shared.noKMOnInput {
@@ -26,8 +29,10 @@ public class ModeAutomaton {
             } else {
                 mode.set(.off)
             }
+            return true
         }
-        // Some people want option key act as touchpad-touchscreen mapper
+
+        // Preserve the app's normal Option behavior when the shortcut did not toggle modes.
         return false
     }
 

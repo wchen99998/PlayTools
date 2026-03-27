@@ -19,6 +19,9 @@ private struct AKAppSettingsData: Codable {
 }
 
 class AKPlugin: NSObject, Plugin {
+    private static let leftOptionKeyCode: UInt16 = 58
+    private static let rightOptionKeyCode: UInt16 = 61
+
     required override init() {
         super.init()
         if let window = NSApplication.shared.windows.first {
@@ -129,6 +132,28 @@ class AKPlugin: NSObject, Plugin {
     }
 
     private var modifierFlag: UInt = 0
+    private var swapModeShortcutActive = false
+
+    private func isOptionKey(_ keyCode: UInt16) -> Bool {
+        keyCode == Self.leftOptionKeyCode || keyCode == Self.rightOptionKeyCode
+    }
+
+    private func isModifierPressed(keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags) -> Bool {
+        switch keyCode {
+        case 54, 55:
+            modifierFlags.contains(.command)
+        case 56, 60:
+            modifierFlags.contains(.shift)
+        case 57:
+            modifierFlags.contains(.capsLock)
+        case 58, 61:
+            modifierFlags.contains(.option)
+        case 59, 62:
+            modifierFlags.contains(.control)
+        default:
+            modifierFlag < modifierFlags.rawValue
+        }
+    }
 
     // swiftlint:disable:next function_body_length
     func setupKeyboard(keyboard: @escaping (UInt16, Bool, Bool, Bool) -> Bool,
@@ -168,18 +193,25 @@ class AKPlugin: NSObject, Plugin {
             if checkCmd(modifier: event.modifierFlags) {
                 return event
             }
-            let pressed = self.modifierFlag < event.modifierFlags.rawValue
-            let changed = self.modifierFlag ^ event.modifierFlags.rawValue
-            self.modifierFlag = event.modifierFlags.rawValue
-            let changedFlags = NSEvent.ModifierFlags(rawValue: changed)
-            if pressed && changedFlags.contains(.option) {
-                if swapMode() {
+            let modifierFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let pressed = self.isModifierPressed(keyCode: event.keyCode, modifierFlags: modifierFlags)
+            self.modifierFlag = modifierFlags.rawValue
+
+            if self.isOptionKey(event.keyCode) {
+                // If Option toggled cursor mode, swallow both edges so the next click is not treated as Option-click.
+                if pressed {
+                    self.swapModeShortcutActive = swapMode()
+                    if self.swapModeShortcutActive {
+                        return nil
+                    }
+                } else if self.swapModeShortcutActive {
+                    self.swapModeShortcutActive = false
                     return nil
                 }
                 return event
             }
             let consumed = keyboard(event.keyCode, pressed, false,
-                                    event.modifierFlags.contains(.control))
+                                    modifierFlags.contains(.control))
             if consumed {
                 return nil
             }
