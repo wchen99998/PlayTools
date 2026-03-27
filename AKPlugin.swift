@@ -84,7 +84,12 @@ class AKPlugin: NSObject, Plugin {
     }
 
     var windowFrame: CGRect {
-        NSApplication.shared.windows.first?.frame ?? CGRect()
+        guard let window = NSApplication.shared.windows.first else {
+            return CGRect()
+        }
+        // `mouseLocationOutsideOfEventStream` is reported in the window's content-space.
+        // Use the content rect here so mouse-to-touch scaling matches the playable surface.
+        return window.contentRect(forFrameRect: window.frame)
     }
 
     var isMainScreenEqualToFirst: Bool {

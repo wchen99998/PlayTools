@@ -13,11 +13,14 @@ public class TouchscreenMouseEventAdapter: MouseEventAdapter {
 
     static public func cursorPos() -> CGPoint? {
         // IMPROVE: this is expensive (maybe?)
-        var point = AKInterface.shared!.mousePoint
+        let pointInWindow = AKInterface.shared!.mousePoint
         let rect = AKInterface.shared!.windowFrame
-        if rect.width < 1 || rect.height < 1 {
+        let viewRect: CGRect = screen.screenRect
+        guard rect.width >= 1, rect.height >= 1, viewRect.width >= 1, viewRect.height >= 1 else {
             return nil
         }
+
+        var point = pointInWindow
         if screen.resizable && !screen.fullscreen {
             // Allow user to resize window by dragging edges
             let margin = CGFloat(10)
@@ -26,27 +29,30 @@ public class TouchscreenMouseEventAdapter: MouseEventAdapter {
                 return nil
             }
         }
-        let viewRect: CGRect = screen.screenRect
-        let widthRate = viewRect.width / rect.width
-        var rate = viewRect.height / rect.height
-        if widthRate > rate {
-            // Keep aspect ratio
-            rate = widthRate
-        }
-        if screen.fullscreen {
-            // Vertically in center
-            point.y -= (rect.height - viewRect.height / rate)/2
-        }
-        point.y *= rate
-        point.y = viewRect.height - point.y
-        // For traffic light buttons when not fullscreen
-        if point.y < 0 {
+
+        // Match the fitted gameplay surface inside the Catalyst content rect, then translate
+        // from AppKit bottom-left coordinates into UIKit's top-left coordinates.
+        let scale = max(viewRect.width / rect.width, viewRect.height / rect.height)
+        let fittedWidth = viewRect.width / scale
+        let fittedHeight = viewRect.height / scale
+        let insetX = max((rect.width - fittedWidth) / 2, 0)
+        let insetY = max((rect.height - fittedHeight) / 2, 0)
+
+        point.x -= insetX
+        point.y -= insetY
+
+        if point.x < 0 || point.x > fittedWidth || point.y < 0 || point.y > fittedHeight {
             return nil
         }
-        // Horizontally in center
-        point.x -= (rect.width - viewRect.width / rate)/2
-        point.x *= rate
-        return point
+
+        point.x *= scale
+        point.y *= scale
+        point.y = viewRect.height - point.y
+
+        return CGPoint(
+            x: min(max(point.x, 0), viewRect.width.nextDown),
+            y: min(max(point.y, 0), viewRect.height.nextDown)
+        )
     }
 
     public func handleScrollWheel(deltaX: CGFloat, deltaY: CGFloat) -> Bool {
