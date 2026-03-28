@@ -373,7 +373,7 @@ private final class UIKitTextInputBridge {
 
     private func currentTextInputResponder() -> ActiveTextInputResponder? {
         if let responder = activeResponder as? ActiveTextInputResponder,
-           responder.isFirstResponder {
+           isAttachedToWindow(responder) {
             return responder
         }
 
@@ -424,6 +424,13 @@ private final class UIKitTextInputBridge {
         let location = responder.offset(from: responder.beginningOfDocument, to: textRange.start)
         let length = responder.offset(from: textRange.start, to: textRange.end)
         return NSRange(location: max(0, location), length: max(0, length))
+    }
+
+    private func isAttachedToWindow(_ responder: ActiveTextInputResponder) -> Bool {
+        guard let view = responder as? UIView else {
+            return responder.isFirstResponder
+        }
+        return view.window != nil
     }
 }
 

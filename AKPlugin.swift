@@ -30,7 +30,11 @@ private final class AKTextInputClientView: NSView, NSTextInputClient {
     var caretRectInWindowProvider: () -> CGRect = { .zero }
     var activeWindowProvider: () -> NSWindow? = { nil }
 
-    private lazy var textInputContext = NSTextInputContext(client: self)
+    private weak var previousFirstResponder: NSResponder?
+
+    override var acceptsFirstResponder: Bool {
+        true
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -41,18 +45,37 @@ private final class AKTextInputClientView: NSView, NSTextInputClient {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func handle(_ event: NSEvent) -> Bool {
-        guard isEditing(), event.type == .keyDown else {
-            return false
+    func clearMarkedText() {
+        inputContext?.discardMarkedText()
+    }
+
+    func activateIfNeeded() {
+        guard isEditing(),
+              let window = activeWindowProvider() else {
+            return
         }
 
         attachIfNeeded()
-        textInputContext.activate()
-        return textInputContext.handleEvent(event)
+        guard window.firstResponder !== self else {
+            return
+        }
+
+        previousFirstResponder = window.firstResponder
+        window.makeFirstResponder(self)
     }
 
-    func clearMarkedText() {
-        textInputContext.discardMarkedText()
+    func deactivateIfNeeded() {
+        clearMarkedText()
+
+        guard let window = window ?? activeWindowProvider(),
+              window.firstResponder === self else {
+            previousFirstResponder = nil
+            return
+        }
+
+        let nextResponder = previousFirstResponder
+        previousFirstResponder = nil
+        window.makeFirstResponder(nextResponder)
     }
 
     private func attachIfNeeded() {
@@ -81,6 +104,13 @@ private final class AKTextInputClientView: NSView, NSTextInputClient {
         default:
             break
         }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if inputContext?.handleEvent(event) == true {
+            return
+        }
+        super.keyDown(with: event)
     }
 
     func insertText(_ string: Any, replacementRange: NSRange) {
@@ -352,11 +382,10 @@ class AKPlugin: NSObject, Plugin, PluginTextInputBridge {
                 return event
             }
             if self.textInputClient.isEditing() {
-                if self.textInputClient.handle(event) {
-                    return nil
-                }
+                self.textInputClient.activateIfNeeded()
                 return event
             }
+            self.textInputClient.deactivateIfNeeded()
             let consumed = keyboard(event.keyCode, true, event.isARepeat,
                                     event.modifierFlags.contains(.control))
             if consumed {
@@ -371,6 +400,7 @@ class AKPlugin: NSObject, Plugin, PluginTextInputBridge {
             if self.textInputClient.isEditing() {
                 return event
             }
+            self.textInputClient.deactivateIfNeeded()
             let consumed = keyboard(event.keyCode, false, false,
                                     event.modifierFlags.contains(.control))
             if consumed {
@@ -389,6 +419,7 @@ class AKPlugin: NSObject, Plugin, PluginTextInputBridge {
             if self.textInputClient.isEditing() {
                 return event
             }
+            self.textInputClient.deactivateIfNeeded()
 
             if self.isOptionKey(event.keyCode) {
                 // If Option toggled cursor mode, swallow both edges so the next click is not treated as Option-click.
