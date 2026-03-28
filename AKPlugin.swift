@@ -178,7 +178,7 @@ private final class AKTextInputClientView: NSView, NSTextInputClient {
     }
 }
 
-class AKPlugin: NSObject, Plugin {
+class AKPlugin: NSObject, Plugin, PluginTextInputBridge {
     private static let leftOptionKeyCode: UInt16 = 58
     private static let rightOptionKeyCode: UInt16 = 61
     private let textInputClient = AKTextInputClientView(frame: .zero)

@@ -94,7 +94,12 @@ public class ControlMode: Equatable {
     }
 
     private func setupTextInputBridge() {
-        AKInterface.shared!.setupTextInputBridge(
+        guard let textInputBridgePlugin = AKInterface.shared as? PluginTextInputBridge else {
+            Toucher.writeLog(logMessage: "plugin missing text input bridge support")
+            return
+        }
+
+        textInputBridgePlugin.setupTextInputBridge(
             isEditing: { [weak self] in
                 guard let self else {
                     return false

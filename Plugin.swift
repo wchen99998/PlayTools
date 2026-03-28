@@ -26,6 +26,17 @@ public protocol Plugin: NSObjectProtocol {
     func terminateApplication()
     func setupKeyboard(keyboard: @escaping (UInt16, Bool, Bool, Bool) -> Bool,
                        swapMode: @escaping () -> Bool)
+    func setupMouseMoved(_ mouseMoved: @escaping (CGFloat, CGFloat) -> Bool)
+    func setupMouseButton(left: Bool, right: Bool, _ consumed: @escaping (Int, Bool) -> Bool)
+    func setupScrollWheel(_ onMoved: @escaping (CGFloat, CGFloat) -> Bool)
+    func urlForApplicationWithBundleIdentifier(_ value: String) -> URL?
+    func setMenuBarVisible(_ value: Bool)
+}
+
+// Keep IME bridging on a separate protocol so older injected AKInterface bundles
+// still satisfy the base Plugin contract and continue to load.
+@objc(PluginTextInputBridge)
+public protocol PluginTextInputBridge: NSObjectProtocol {
     func setupTextInputBridge(
         isEditing: @escaping () -> Bool,
         insertText: @escaping (String) -> Void,
@@ -37,9 +48,4 @@ public protocol Plugin: NSObjectProtocol {
         markedText: @escaping () -> String,
         caretRectInWindow: @escaping () -> CGRect
     )
-    func setupMouseMoved(_ mouseMoved: @escaping (CGFloat, CGFloat) -> Bool)
-    func setupMouseButton(left: Bool, right: Bool, _ consumed: @escaping (Int, Bool) -> Bool)
-    func setupScrollWheel(_ onMoved: @escaping (CGFloat, CGFloat) -> Bool)
-    func urlForApplicationWithBundleIdentifier(_ value: String) -> URL?
-    func setMenuBarVisible(_ value: Bool)
 }
