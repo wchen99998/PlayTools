@@ -15,6 +15,11 @@ class PlayInput {
         _dispatch_main_queue_callback_4CF(nil)
     }
 
+    private func resetTransientInputState() {
+        ActionDispatcher.invalidateNonButtonActions()
+        Toucher.resetTargetWindow()
+    }
+
     func initialize() {
         // drain the dispatch queue every frame for responding to GCController events
         let displaylink = CADisplayLink(target: self, selector: #selector(drainMainDispatchQueue))
@@ -33,8 +38,21 @@ class PlayInput {
 
         centre.addObserver(forName: NSNotification.Name(rawValue: "NSWindowDidBecomeKeyNotification"), object: nil,
             queue: main) { _ in
+            Toucher.resetTargetWindow()
             if mode.cursorHidden() {
                 AKInterface.shared!.warpCursor()
+            }
+        }
+
+        let focusLossNotifications: [NSNotification.Name] = [
+            UIApplication.willResignActiveNotification,
+            UIScene.willDeactivateNotification,
+            NSNotification.Name(rawValue: "NSApplicationDidResignActiveNotification"),
+            NSNotification.Name(rawValue: "NSWindowDidResignKeyNotification")
+        ]
+        for name in focusLossNotifications {
+            centre.addObserver(forName: name, object: nil, queue: main) { _ in
+                self.resetTransientInputState()
             }
         }
 

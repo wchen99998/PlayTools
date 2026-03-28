@@ -22,30 +22,55 @@ class AKPlugin: NSObject, Plugin {
     private static let leftOptionKeyCode: UInt16 = 58
     private static let rightOptionKeyCode: UInt16 = 61
 
+    private func containsUIKitContent(_ window: NSWindow) -> Bool {
+        let uiWindows = window.value(forKey: "uiWindows") as? [Any]
+        return !(uiWindows?.isEmpty ?? true)
+    }
+
+    private func activeGameplayWindow(preferred preferredWindow: NSWindow? = nil) -> NSWindow? {
+        let preferredWindows = [
+            preferredWindow,
+            NSApplication.shared.currentEvent?.window,
+            NSApplication.shared.keyWindow,
+            NSApplication.shared.mainWindow
+        ].compactMap { $0 }
+
+        if let window = preferredWindows.first(where: { containsUIKitContent($0) }) {
+            return window
+        }
+
+        return NSApplication.shared.windows.first(where: { containsUIKitContent($0) })
+            ?? preferredWindows.first
+            ?? NSApplication.shared.windows.first
+    }
+
+    private func applyWindowConfiguration(to window: NSWindow) {
+        window.styleMask.insert([.resizable])
+        window.collectionBehavior = [.fullScreenPrimary, .managed, .participatesInCycle]
+        window.isMovable = true
+        window.isMovableByWindowBackground = true
+
+        if self.hideTitleBarSetting == true {
+            window.styleMask.insert([.fullSizeContentView])
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.toolbar = nil
+            window.title = ""
+        }
+
+        if self.floatingWindowSetting == true {
+            window.level = .floating
+        }
+
+        if let aspectRatio = self.aspectRatioSetting {
+            window.contentAspectRatio = aspectRatio
+        }
+    }
+
     required override init() {
         super.init()
-        if let window = NSApplication.shared.windows.first {
-            window.styleMask.insert([.resizable])
-            window.collectionBehavior = [.fullScreenPrimary, .managed, .participatesInCycle]
-            window.isMovable = true
-            window.isMovableByWindowBackground = true
-
-            if self.hideTitleBarSetting == true {
-                window.styleMask.insert([.fullSizeContentView])
-                window.titlebarAppearsTransparent = true
-                window.titleVisibility = .hidden
-                window.toolbar = nil
-                window.title = ""
-            }
-
-            if self.floatingWindowSetting == true {
-                window.level = .floating
-            }
-
-            if let aspectRatio = self.aspectRatioSetting {
-                window.contentAspectRatio = aspectRatio
-            }
-
+        if let window = activeGameplayWindow() {
+            applyWindowConfiguration(to: window)
             NSWindow.allowsAutomaticWindowTabbing = true
         }
 
@@ -55,23 +80,8 @@ class AKPlugin: NSObject, Plugin {
             object: nil,
             queue: .main) { notif in
                 guard let win = notif.object as? NSWindow else { return }
-                win.styleMask.insert([.resizable])
-
-                if self.hideTitleBarSetting == true {
-                    win.styleMask.insert([.fullSizeContentView])
-                    win.titlebarAppearsTransparent = true
-                    win.titleVisibility = .hidden
-                    win.toolbar = nil
-                    win.title = ""
-                }
-
-                if self.floatingWindowSetting == true {
-                    win.level = .floating
-                }
-
-                if let aspectRatio = self.aspectRatioSetting {
-                    win.contentAspectRatio = aspectRatio
-                }
+                guard self.containsUIKitContent(win) else { return }
+                self.applyWindowConfiguration(to: win)
         }
     }
 
@@ -80,11 +90,11 @@ class AKPlugin: NSObject, Plugin {
     }
 
     var mousePoint: CGPoint {
-        NSApplication.shared.windows.first?.mouseLocationOutsideOfEventStream ?? CGPoint()
+        activeGameplayWindow()?.mouseLocationOutsideOfEventStream ?? CGPoint()
     }
 
     var windowFrame: CGRect {
-        guard let window = NSApplication.shared.windows.first else {
+        guard let window = activeGameplayWindow() else {
             return CGRect()
         }
         // `mouseLocationOutsideOfEventStream` is reported in the window's content-space.
@@ -93,15 +103,16 @@ class AKPlugin: NSObject, Plugin {
     }
 
     var isMainScreenEqualToFirst: Bool {
-        return NSScreen.main == NSScreen.screens.first
+        let activeScreen = activeGameplayWindow()?.screen ?? NSScreen.main
+        return activeScreen == NSScreen.screens.first
     }
 
     var mainScreenFrame: CGRect {
-        return NSScreen.main!.frame as CGRect
+        (activeGameplayWindow()?.screen ?? NSScreen.main ?? NSScreen.screens.first)?.frame ?? CGRect()
     }
 
     var isFullscreen: Bool {
-        NSApplication.shared.windows.first!.styleMask.contains(.fullScreen)
+        activeGameplayWindow()?.styleMask.contains(.fullScreen) ?? false
     }
 
     var cmdPressed: Bool = false
@@ -121,7 +132,7 @@ class AKPlugin: NSObject, Plugin {
         guard let firstScreen = NSScreen.screens.first else {return}
         let frame = windowFrame
         // Convert from NS coordinates to CG coordinates
-        CGWarpMouseCursorPosition(CGPoint(x: frame.midX, y: firstScreen.frame.height - frame.midY))
+        CGWarpMouseCursorPosition(CGPoint(x: frame.midX, y: firstScreen.frame.maxY - frame.midY))
     }
 
     func unhideCursor() {
@@ -280,8 +291,13 @@ class AKPlugin: NSObject, Plugin {
                 }
             }
 
-            // For traffic light buttons when fullscreen
-            if event.window != NSApplication.shared.windows.first! {
+            guard let eventWindow = event.window else {
+                return event
+            }
+            guard let activeWindow = self.activeGameplayWindow(preferred: eventWindow) else {
+                return event
+            }
+            if eventWindow != activeWindow {
                 return event
             }
             if consumed(event.buttonNumber, true) {

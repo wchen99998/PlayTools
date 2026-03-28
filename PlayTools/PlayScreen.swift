@@ -86,17 +86,37 @@ public class PlayScreen: NSObject {
     @objc public static let shared = PlayScreen()
 
     func initialize() {
-        if resizable {
+        let centre = NotificationCenter.default
+        let main = OperationQueue.main
+
+        centre.addObserver(forName: UIWindow.didBecomeKeyNotification, object: nil, queue: main) { notification in
+            Self.refreshCachedWindow()
+
+            guard self.resizable,
+                  let window = notification.object as? UIWindow,
+                  let windowScene = window.windowScene else {
+                return
+            }
+
             // Remove default size restrictions
-            NotificationCenter.default.addObserver(forName: UIWindow.didBecomeKeyNotification, object: nil,
-                queue: .main) { notification in
-                if let window = notification.object as? UIWindow,
-                   let windowScene = window.windowScene {
-                    windowScene.sizeRestrictions?.minimumSize = CGSize(width: 0, height: 0)
-                    windowScene.sizeRestrictions?.maximumSize = CGSize(width: .max, height: .max)
-                }
+            windowScene.sizeRestrictions?.minimumSize = CGSize(width: 0, height: 0)
+            windowScene.sizeRestrictions?.maximumSize = CGSize(width: .max, height: .max)
+        }
+
+        let cacheRefreshNotifications: [NSNotification.Name] = [
+            UIWindow.didResignKeyNotification,
+            UIScene.didActivateNotification,
+            UIScene.willDeactivateNotification,
+            UIApplication.didBecomeActiveNotification,
+            UIApplication.willResignActiveNotification
+        ]
+        for name in cacheRefreshNotifications {
+            centre.addObserver(forName: name, object: nil, queue: main) { _ in
+                Self.refreshCachedWindow()
             }
         }
+
+        Self.refreshCachedWindow()
     }
 
     @objc public static func frame(_ rect: CGRect) -> CGRect {
@@ -151,12 +171,37 @@ public class PlayScreen: NSObject {
         max / 100.0
     }
 
+    private var allWindowScenes: [UIWindowScene] {
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+    }
+
+    private func preferredWindow() -> UIWindow? {
+        let sceneGroups = [
+            allWindowScenes.filter { $0.activationState == .foregroundActive },
+            allWindowScenes.filter { $0.activationState == .foregroundInactive },
+            allWindowScenes.filter { $0.activationState == .background },
+            allWindowScenes.filter { $0.activationState == .unattached }
+        ]
+
+        for scenes in sceneGroups {
+            let windows = scenes.flatMap { $0.windows }
+
+            if let keyWindow = windows.first(where: \.isKeyWindow) {
+                return keyWindow
+            }
+
+            if let visibleWindow = windows.first(where: {
+                !$0.isHidden && $0.alpha > 0 && $0.bounds.width > 0 && $0.bounds.height > 0
+            }) {
+                return visibleWindow
+            }
+        }
+
+        return nil
+    }
+
     var keyWindow: UIWindow? {
-        return UIApplication
-            .shared
-            .connectedScenes
-            .flatMap { ($0 as? UIWindowScene)?.windows ?? [] }
-            .first { $0.isKeyWindow }
+        preferredWindow()
     }
 
     var windowScene: UIWindowScene? {
@@ -164,11 +209,7 @@ public class PlayScreen: NSObject {
     }
 
     var window: UIWindow? {
-        return UIApplication.shared.connectedScenes
-            .filter({$0.activationState == .foregroundActive})
-            .compactMap({$0 as? UIWindowScene})
-            .first?.windows
-            .filter({$0.isKeyWindow}).first
+        preferredWindow()
     }
 
     var nsWindow: NSObject? {
@@ -202,9 +243,16 @@ public class PlayScreen: NSObject {
     }
 
     private static weak var cachedWindow: UIWindow?
+    private static func refreshCachedWindow() {
+        cachedWindow = PlayScreen.shared.preferredWindow()
+    }
+
     @objc public static func boundsResizable(_ rect: CGRect) -> CGRect {
-        if cachedWindow == nil {
-            cachedWindow = PlayScreen.shared.keyWindow
+        if let activeWindow = PlayScreen.shared.preferredWindow(),
+           activeWindow !== cachedWindow {
+            cachedWindow = activeWindow
+        } else if cachedWindow == nil {
+            refreshCachedWindow()
         }
         return cachedWindow?.bounds ?? rect
     }

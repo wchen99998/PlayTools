@@ -15,6 +15,25 @@ class Toucher {
     NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true)[0] + "/toucher.log"
     static private var logCount = 0
     static var logFile: FileHandle?
+
+    static func resetTargetWindow() {
+        keyWindow = nil
+        keyView = nil
+    }
+
+    private static func beginTarget(for point: CGPoint) -> (window: UIWindow, view: UIView)? {
+        guard let window = screen.keyWindow ?? screen.window else {
+            return nil
+        }
+        return (window, window.hitTest(point, with: nil) ?? window)
+    }
+
+    private static func currentTarget(for point: CGPoint) -> (window: UIWindow, view: UIView)? {
+        guard let window = keyWindow else {
+            return nil
+        }
+        return (window, keyView ?? window.hitTest(point, with: nil) ?? window)
+    }
     /**
      on invocations with phase "began", an int id is allocated, which can be used later to refer to this touch point.
      on invocations with phase "ended", id is set to nil representing the touch point is no longer valid.
@@ -26,20 +45,37 @@ class Toucher {
             if tid != nil {
                 return
             }
+            guard let target = beginTarget(for: point) else {
+                writeLog(logMessage: "drop began \(actionName)(\(keyName)): missing key window")
+                return
+            }
             tid = -1
-            keyWindow = screen.keyWindow
-            keyView = keyWindow!.hitTest(point, with: nil)
+            keyWindow = target.window
+            keyView = target.view
         } else if tid == nil {
             return
         }
-        var recordId = tid!
-        tid = PTFakeMetaTouch.fakeTouchId(tid!, at: point, with: phase, in: keyWindow, on: keyView)
-        writeLog(logMessage:
-                "\(phase.rawValue.description) \(tid!.description) \(point.debugDescription)")
-        if tid! < 0 {
+
+        guard let target = currentTarget(for: point), let currentID = tid else {
+            writeLog(logMessage: "drop \(phase.rawValue) \(actionName)(\(keyName)): missing touch target")
             tid = nil
+            resetTargetWindow()
+            return
+        }
+
+        var recordId = currentID
+        let nextTouchID = PTFakeMetaTouch.fakeTouchId(currentID, at: point, with: phase,
+                                                      in: target.window, on: target.view)
+        tid = nextTouchID
+        writeLog(logMessage:
+                "\(phase.rawValue.description) \(nextTouchID.description) \(point.debugDescription)")
+        if nextTouchID < 0 {
+            tid = nil
+            resetTargetWindow()
         } else {
-            recordId = tid!
+            recordId = nextTouchID
+            keyWindow = target.window
+            keyView = target.view
         }
         DebugModel.instance.record(point: point, phase: phase, tid: recordId,
                                    description: actionName + "(" + keyName + ")")
